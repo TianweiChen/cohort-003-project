@@ -8,12 +8,19 @@ import {
   updateCourseStatus,
   getLessonCountForCourse,
 } from "~/services/courseService";
+import {
+  createModule,
+  updateModuleTitle,
+  deleteModule,
+  getModuleById,
+} from "~/services/moduleService";
 import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { CourseStatus, UserRole } from "~/db/schema";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -27,6 +34,8 @@ import {
   Circle,
   Clock,
   Pencil,
+  Plus,
+  Trash2,
   Users,
 } from "lucide-react";
 import { data } from "react-router";
@@ -137,6 +146,45 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
     updateCourseStatus(courseId, status);
     return { success: true, field: "status" };
+  }
+
+  if (intent === "add-module") {
+    const title = (formData.get("title") as string)?.trim();
+    if (!title) {
+      return data({ error: "Module title cannot be empty." }, { status: 400 });
+    }
+    createModule(courseId, title, null);
+    return { success: true, field: "module" };
+  }
+
+  if (intent === "rename-module") {
+    const moduleId = parseInt(formData.get("moduleId") as string, 10);
+    const title = (formData.get("title") as string)?.trim();
+    if (isNaN(moduleId)) {
+      return data({ error: "Invalid module ID." }, { status: 400 });
+    }
+    if (!title) {
+      return data({ error: "Module title cannot be empty." }, { status: 400 });
+    }
+    const mod = getModuleById(moduleId);
+    if (!mod || mod.courseId !== courseId) {
+      return data({ error: "Module not found in this course." }, { status: 404 });
+    }
+    updateModuleTitle(moduleId, title);
+    return { success: true, field: "module" };
+  }
+
+  if (intent === "delete-module") {
+    const moduleId = parseInt(formData.get("moduleId") as string, 10);
+    if (isNaN(moduleId)) {
+      return data({ error: "Invalid module ID." }, { status: 400 });
+    }
+    const mod = getModuleById(moduleId);
+    if (!mod || mod.courseId !== courseId) {
+      return data({ error: "Module not found in this course." }, { status: 404 });
+    }
+    deleteModule(moduleId);
+    return { success: true, field: "module" };
   }
 
   throw data("Invalid action.", { status: 400 });
@@ -304,6 +352,207 @@ function InlineEditableDescription({
   );
 }
 
+function InlineEditableModuleTitle({
+  value,
+  moduleId,
+}: {
+  value: string;
+  moduleId: number;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const fetcher = useFetcher();
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    setEditValue(value);
+  }, [value]);
+
+  function handleSave() {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== value) {
+      fetcher.submit(
+        { intent: "rename-module", moduleId: String(moduleId), title: trimmed },
+        { method: "post" }
+      );
+    }
+    setIsEditing(false);
+  }
+
+  function handleCancel() {
+    setEditValue(value);
+    setIsEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === "Escape") {
+      handleCancel();
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        className="w-full rounded-md border border-input bg-background px-2 py-1 text-base font-semibold outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setIsEditing(true)}
+      className="group flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted"
+    >
+      <h3 className="font-semibold">{value}</h3>
+      <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+    </button>
+  );
+}
+
+function DeleteModuleButton({ moduleId, moduleTitle }: { moduleId: number; moduleTitle: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const fetcher = useFetcher();
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-destructive">Delete "{moduleTitle}"?</span>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => {
+            fetcher.submit(
+              { intent: "delete-module", moduleId: String(moduleId) },
+              { method: "post" }
+            );
+            setConfirming(false);
+          }}
+        >
+          Confirm
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setConfirming(false)}
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+      onClick={() => setConfirming(true)}
+    >
+      <Trash2 className="size-4" />
+    </Button>
+  );
+}
+
+function AddModuleForm() {
+  const [isAdding, setIsAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const fetcher = useFetcher();
+
+  useEffect(() => {
+    if (isAdding && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isAdding]);
+
+  // Reset form after successful submission
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.success) {
+      setTitle("");
+      setIsAdding(false);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  function handleSubmit() {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    fetcher.submit(
+      { intent: "add-module", title: trimmed },
+      { method: "post" }
+    );
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+    } else if (e.key === "Escape") {
+      setTitle("");
+      setIsAdding(false);
+    }
+  }
+
+  if (!isAdding) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsAdding(true)}
+        className="mt-4"
+      >
+        <Plus className="mr-1.5 size-4" />
+        Add Module
+      </Button>
+    );
+  }
+
+  return (
+    <div className="mt-4 flex items-center gap-2">
+      <Input
+        ref={inputRef}
+        type="text"
+        placeholder="Module title..."
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={handleKeyDown}
+        className="max-w-xs"
+      />
+      <Button size="sm" onClick={handleSubmit} disabled={!title.trim()}>
+        Add
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setTitle("");
+          setIsAdding(false);
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 function statusBadgeColor(status: string) {
   switch (status) {
     case CourseStatus.Published:
@@ -406,7 +655,7 @@ export default function InstructorCourseEditor({
         </Link>
       </div>
 
-      {/* Course Structure (read-only for now) */}
+      {/* Course Content */}
       <div>
         <h2 className="mb-4 text-2xl font-bold">Course Content</h2>
         {course.modules.length === 0 ? (
@@ -414,7 +663,7 @@ export default function InstructorCourseEditor({
             <CardContent className="py-8 text-center">
               <BookOpen className="mx-auto mb-3 size-8 text-muted-foreground/50" />
               <p className="text-muted-foreground">
-                No modules or lessons yet. Module management is coming soon.
+                No modules yet. Add your first module to start building content.
               </p>
             </CardContent>
           </Card>
@@ -423,34 +672,52 @@ export default function InstructorCourseEditor({
             {course.modules.map((mod) => (
               <Card key={mod.id}>
                 <CardHeader>
-                  <h3 className="font-semibold">{mod.title}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {mod.lessons.length}{" "}
-                    {mod.lessons.length === 1 ? "lesson" : "lessons"}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <InlineEditableModuleTitle
+                        value={mod.title}
+                        moduleId={mod.id}
+                      />
+                      <p className="mt-1 px-2 text-sm text-muted-foreground">
+                        {mod.lessons.length}{" "}
+                        {mod.lessons.length === 1 ? "lesson" : "lessons"}
+                      </p>
+                    </div>
+                    <DeleteModuleButton
+                      moduleId={mod.id}
+                      moduleTitle={mod.title}
+                    />
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-2">
-                    {mod.lessons.map((lesson) => (
-                      <li key={lesson.id}>
-                        <div className="flex items-center gap-3 px-3 py-2 text-sm">
-                          <Circle className="size-4 shrink-0 text-muted-foreground" />
-                          <span className="flex-1">{lesson.title}</span>
-                          {lesson.durationMinutes && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="size-3" />
-                              {lesson.durationMinutes}m
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                  {mod.lessons.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-muted-foreground">
+                      No lessons yet.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {mod.lessons.map((lesson) => (
+                        <li key={lesson.id}>
+                          <div className="flex items-center gap-3 px-3 py-2 text-sm">
+                            <Circle className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="flex-1">{lesson.title}</span>
+                            {lesson.durationMinutes && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="size-3" />
+                                {lesson.durationMinutes}m
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
+        <AddModuleForm />
       </div>
     </div>
   );
