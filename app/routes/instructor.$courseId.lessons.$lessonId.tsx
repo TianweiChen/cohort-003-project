@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, useFetcher, useBlocker } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/instructor.$courseId.lessons.$lessonId";
@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { RichTextEditor } from "~/components/rich-text-editor";
+import { MonacoMarkdownEditor } from "~/components/monaco-markdown-editor";
 import { AlertTriangle, ArrowLeft, ClipboardList, ExternalLink, Save } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 
@@ -260,15 +260,14 @@ export default function InstructorLessonEditor({
           <CardHeader>
             <h2 className="text-lg font-semibold">Lesson Content</h2>
             <p className="text-sm text-muted-foreground">
-              Use the toolbar to format text, add headings, lists, code blocks,
-              images, and links.
+              Write lesson content in Markdown. Press Ctrl+S to format and save.
             </p>
           </CardHeader>
           <CardContent>
-            <RichTextEditor
-              content={content}
+            <MonacoMarkdownEditor
+              value={content}
               onChange={setContent}
-              placeholder="Start writing your lesson content..."
+              onSave={handleSave}
             />
           </CardContent>
         </Card>
