@@ -48,6 +48,7 @@ import {
   ArrowLeft,
   BookOpen,
   Clock,
+  Eye,
   FileEdit,
   GripVertical,
   Pencil,
@@ -1198,7 +1199,20 @@ export default function InstructorCourseEditor({
                                                   </span>
                                                 )}
                                                 <Link
+                                                  to={`/courses/${course.slug}/lessons/${lesson.id}`}
+                                                  title="View lesson"
+                                                >
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                                  >
+                                                    <Eye className="size-3.5" />
+                                                  </Button>
+                                                </Link>
+                                                <Link
                                                   to={`/instructor/${course.id}/lessons/${lesson.id}`}
+                                                  title="Edit lesson"
                                                 >
                                                   <Button
                                                     variant="ghost"
