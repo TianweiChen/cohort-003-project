@@ -1,11 +1,20 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { sql } from "drizzle-orm";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import path from "path";
+import { fileURLToPath } from "url";
 import * as schema from "~/db/schema";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const migrationsFolder = path.resolve(__dirname, "../../drizzle");
 
 /**
  * Creates a fresh in-memory SQLite database with all tables for testing.
  * Each call returns a new isolated database instance.
+ *
+ * Uses the same Drizzle migrations as the live database, ensuring
+ * test and production schemas are always in sync.
  */
 export function createTestDb() {
   const sqlite = new Database(":memory:");
@@ -14,129 +23,7 @@ export function createTestDb() {
 
   const testDb = drizzle(sqlite, { schema });
 
-  // Create all tables
-  testDb.run(sql`CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    role TEXT NOT NULL,
-    avatar_url TEXT,
-    bio TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE
-  )`);
-
-  testDb.run(sql`CREATE TABLE courses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL,
-    sales_copy TEXT,
-    instructor_id INTEGER NOT NULL REFERENCES users(id),
-    category_id INTEGER NOT NULL REFERENCES categories(id),
-    status TEXT NOT NULL,
-    cover_image_url TEXT,
-    price INTEGER NOT NULL DEFAULT 0,
-    ppp_enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE modules (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    course_id INTEGER NOT NULL REFERENCES courses(id),
-    title TEXT NOT NULL,
-    position INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE lessons (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    module_id INTEGER NOT NULL REFERENCES modules(id),
-    title TEXT NOT NULL,
-    content TEXT,
-    video_url TEXT,
-    position INTEGER NOT NULL,
-    duration_minutes INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE enrollments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    course_id INTEGER NOT NULL REFERENCES courses(id),
-    enrolled_at TEXT NOT NULL DEFAULT (datetime('now')),
-    completed_at TEXT
-  )`);
-
-  testDb.run(sql`CREATE TABLE purchases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    course_id INTEGER NOT NULL REFERENCES courses(id),
-    price_paid INTEGER NOT NULL,
-    country TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE lesson_progress (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    lesson_id INTEGER NOT NULL REFERENCES lessons(id),
-    status TEXT NOT NULL,
-    completed_at TEXT
-  )`);
-
-  testDb.run(sql`CREATE TABLE quizzes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lesson_id INTEGER NOT NULL REFERENCES lessons(id),
-    title TEXT NOT NULL,
-    passing_score REAL NOT NULL
-  )`);
-
-  testDb.run(sql`CREATE TABLE quiz_questions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    quiz_id INTEGER NOT NULL REFERENCES quizzes(id),
-    question_text TEXT NOT NULL,
-    question_type TEXT NOT NULL,
-    position INTEGER NOT NULL
-  )`);
-
-  testDb.run(sql`CREATE TABLE quiz_options (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    question_id INTEGER NOT NULL REFERENCES quiz_questions(id),
-    option_text TEXT NOT NULL,
-    is_correct INTEGER NOT NULL
-  )`);
-
-  testDb.run(sql`CREATE TABLE quiz_attempts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    quiz_id INTEGER NOT NULL REFERENCES quizzes(id),
-    score REAL NOT NULL,
-    passed INTEGER NOT NULL,
-    attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-
-  testDb.run(sql`CREATE TABLE quiz_answers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id),
-    question_id INTEGER NOT NULL REFERENCES quiz_questions(id),
-    selected_option_id INTEGER NOT NULL REFERENCES quiz_options(id)
-  )`);
-
-  testDb.run(sql`CREATE TABLE video_watch_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    lesson_id INTEGER NOT NULL REFERENCES lessons(id),
-    event_type TEXT NOT NULL,
-    position_seconds REAL NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
+  migrate(testDb, { migrationsFolder });
 
   return testDb;
 }

@@ -9,6 +9,7 @@
     "typecheck": "react-router typegen && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
     "db:seed": "tsx scripts/seed.ts",
     "loc": "git ls-files | grep -vE '(lock|.db)' | xargs wc -l"
   },
