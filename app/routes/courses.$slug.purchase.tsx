@@ -1,6 +1,7 @@
 import { Link, useFetcher, redirect } from "react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import type { Route } from "./+types/courses.$slug.purchase";
 import {
   getCourseBySlug,
@@ -20,6 +21,15 @@ import { formatDuration, formatPrice } from "~/lib/utils";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { createPurchase } from "~/services/purchaseService";
+import { parseFormData, parseParams } from "~/lib/validation";
+
+const purchaseParamsSchema = z.object({
+  slug: z.string().min(1),
+});
+
+const purchaseActionSchema = z.object({
+  intent: z.literal("confirm-purchase"),
+});
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Purchase";
@@ -86,7 +96,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
-  const slug = params.slug;
+  const { slug } = parseParams(params, purchaseParamsSchema);
   const course = getCourseBySlug(slug);
 
   if (!course) {
@@ -103,20 +113,20 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
-  const intent = formData.get("intent");
+  const parsed = parseFormData(formData, purchaseActionSchema);
 
-  if (intent === "confirm-purchase") {
-    const country = await resolveCountry(request);
-    const pppPrice = course.pppEnabled
-      ? calculatePppPrice(course.price, country)
-      : course.price;
-
-    createPurchase(currentUserId, course.id, pppPrice, country);
-    enrollUser(currentUserId, course.id, false, false);
-    throw redirect(`/courses/${slug}/welcome`);
+  if (!parsed.success) {
+    throw data("Invalid action.", { status: 400 });
   }
 
-  throw data("Invalid action.", { status: 400 });
+  const country = await resolveCountry(request);
+  const pppPrice = course.pppEnabled
+    ? calculatePppPrice(course.price, country)
+    : course.price;
+
+  createPurchase(currentUserId, course.id, pppPrice, country);
+  enrollUser(currentUserId, course.id, false, false);
+  throw redirect(`/courses/${slug}/welcome`);
 }
 
 export default function PurchaseConfirmation({

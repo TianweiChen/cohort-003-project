@@ -42,9 +42,20 @@ import { cn, formatDuration } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
+import { z } from "zod";
 import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess, COUNTRIES } from "~/lib/ppp";
 import { findPurchase } from "~/services/purchaseService";
+import { parseFormData, parseParams } from "~/lib/validation";
+
+const lessonParamsSchema = z.object({
+  slug: z.string().min(1),
+  lessonId: z.coerce.number().int(),
+});
+
+const markCompleteSchema = z.object({
+  intent: z.literal("mark-complete"),
+});
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.lesson?.title ?? "Lesson";
@@ -267,12 +278,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 export async function action({ params, request }: Route.ActionArgs) {
-  const slug = params.slug;
-  const lessonId = Number(params.lessonId);
-
-  if (isNaN(lessonId)) {
-    throw data("Invalid lesson ID", { status: 400 });
-  }
+  const { slug, lessonId } = parseParams(params, lessonParamsSchema);
 
   const course = getCourseBySlug(slug);
   if (!course) {
