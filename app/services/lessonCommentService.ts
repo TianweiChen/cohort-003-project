@@ -100,7 +100,7 @@ export function deleteComment(
   const isAdmin = requestingUserRole === UserRole.Admin;
 
   if (!isOwner && !isInstructor && !isAdmin) {
-    throw new Error("Not authorized to delete this comment");
+    throw new Error("Not authorized");
   }
 
   db.delete(lessonComments).where(eq(lessonComments.id, commentId)).run();
