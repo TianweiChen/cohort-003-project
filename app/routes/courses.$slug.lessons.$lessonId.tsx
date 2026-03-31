@@ -359,7 +359,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   if (intent === "post-comment") {
     const result = parseFormData(formData, postCommentSchema);
     if (!result.success) {
-      throw data("Invalid comment data", { status: 400 });
+      return data({ errors: result.errors }, { status: 400 });
     }
     const { content, parentId } = result.data;
 
@@ -368,14 +368,24 @@ export async function action({ params, request }: Route.ActionArgs) {
       throw data("You must be enrolled to comment", { status: 403 });
     }
 
-    createComment(currentUserId, lessonId, content, parentId);
+    try {
+      createComment(currentUserId, lessonId, content, parentId);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Invalid parent comment")) {
+        throw data("Invalid parent comment", { status: 400 });
+      }
+      if (e instanceof Error && e.message.includes("cannot be empty")) {
+        throw data("Comment content cannot be empty", { status: 400 });
+      }
+      throw e;
+    }
     return { commentPosted: true };
   }
 
   if (intent === "delete-comment") {
     const result = parseFormData(formData, deleteCommentSchema);
     if (!result.success) {
-      throw data("Invalid comment data", { status: 400 });
+      return data({ errors: result.errors }, { status: 400 });
     }
     const { commentId } = result.data;
 
