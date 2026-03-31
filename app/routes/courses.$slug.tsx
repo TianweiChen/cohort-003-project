@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useSearchParams, useFetcher } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug";
 import {
@@ -7,6 +7,14 @@ import {
   getCourseWithDetails,
   getLessonCountForCourse,
 } from "~/services/courseService";
+import {
+  getCourseRatingStats,
+  getUserRatingForCourse,
+  upsertCourseRating,
+} from "~/services/ratingService";
+import { StarRatingDisplay, StarRatingInput } from "~/components/star-rating";
+import { z } from "zod";
+import { parseFormData } from "~/lib/validation";
 import { isUserEnrolled } from "~/services/enrollmentService";
 import {
   calculateProgress,
@@ -102,6 +110,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     : courseWithDetails.price;
   const tierInfo = getCountryTierInfo(country);
 
+  const ratingStats = getCourseRatingStats(course.id);
+  let userRating: number | null = null;
+  if (currentUserId && enrolled) {
+    const existing = getUserRatingForCourse(currentUserId, course.id);
+    userRating = existing?.rating ?? null;
+  }
+
   return {
     course: courseWithDetails,
     salesCopyHtml,
@@ -113,10 +128,45 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingAverage: ratingStats.average,
+    ratingCount: ratingStats.count,
+    userRating,
   };
 }
 
-// No action — enrollment is handled via the purchase confirmation page
+const rateCourseSchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+});
+
+export async function action({ params, request }: Route.ActionArgs) {
+  const slug = params.slug;
+  if (!slug) throw data("Invalid course slug", { status: 400 });
+
+  const course = getCourseBySlug(slug);
+  if (!course) throw data("Course not found", { status: 404 });
+
+  const currentUserId = await getCurrentUserId(request);
+  if (!currentUserId) throw data("You must be logged in", { status: 401 });
+
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "rate-course") {
+    if (!isUserEnrolled(currentUserId, course.id)) {
+      throw data("You must be enrolled to rate this course", { status: 403 });
+    }
+
+    const parsed = parseFormData(formData, rateCourseSchema);
+    if (!parsed.success) {
+      return data({ errors: parsed.errors }, { status: 400 });
+    }
+
+    upsertCourseRating(currentUserId, course.id, parsed.data.rating);
+    return { success: true };
+  }
+
+  throw data("Unknown intent", { status: 400 });
+}
 
 export function HydrateFallback() {
   return (
@@ -181,9 +231,13 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingAverage,
+    ratingCount,
+    userRating,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
+  const ratingFetcher = useFetcher();
 
   useEffect(() => {
     if (searchParams.get("already_enrolled") === "1") {
@@ -301,7 +355,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
         <p className="mb-4 text-lg text-muted-foreground">
           {course.description}
         </p>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <UserAvatar
               name={course.instructorName}
@@ -320,6 +374,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
               {formatDuration(totalDuration, true, false, false)} total
             </span>
           )}
+          <StarRatingDisplay average={ratingAverage} count={ratingCount} />
         </div>
       </div>
 
@@ -413,6 +468,13 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                       Buy More Seats
                     </Button>
                   </Link>
+                  <div className="border-t pt-2">
+                    <StarRatingInput
+                      courseId={course.id}
+                      currentRating={userRating}
+                      fetcher={ratingFetcher}
+                    />
+                  </div>
                 </>
               ) : (
                 enrollButton

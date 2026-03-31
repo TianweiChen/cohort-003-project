@@ -1,6 +1,8 @@
 import { Form, Link, useSearchParams, useNavigation, isRouteErrorResponse } from "react-router";
 import type { Route } from "./+types/courses";
 import { buildCourseQuery, getLessonCountForCourse } from "~/services/courseService";
+import { getRatingStatsForCourses } from "~/services/ratingService";
+import { StarRatingDisplay } from "~/components/star-rating";
 import { getAllCategories } from "~/services/categoryService";
 import { CourseStatus } from "~/db/schema";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
@@ -55,8 +57,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
+  const courseIds = courses.map((c) => c.id);
+  const ratingStatsMap = getRatingStatsForCourses(courseIds);
+
   const coursesWithLessonCount = courses.map((course) => {
     const userProgress = progressMap.get(course.id);
+    const ratingStats = ratingStatsMap.get(course.id) ?? { average: null, count: 0 };
     const pppPrice = course.pppEnabled
       ? calculatePppPrice(course.price, country)
       : course.price;
@@ -66,6 +72,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       progress: userProgress?.progress ?? null,
       completedLessons: userProgress?.completedLessons ?? null,
       pppPrice,
+      ratingAverage: ratingStats.average,
+      ratingCount: ratingStats.count,
     };
   });
 
@@ -224,6 +232,14 @@ export default function CourseCatalog({ loaderData }: Route.ComponentProps) {
                         style={{ width: `${course.progress}%` }}
                       />
                     </div>
+                  </CardContent>
+                )}
+                {course.ratingCount > 0 && (
+                  <CardContent className="pt-0 pb-0">
+                    <StarRatingDisplay
+                      average={course.ratingAverage}
+                      count={course.ratingCount}
+                    />
                   </CardContent>
                 )}
                 <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
