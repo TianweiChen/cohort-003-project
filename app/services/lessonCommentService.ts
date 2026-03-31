@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "~/db";
-import { lessonComments, users } from "~/db/schema";
+import { lessonComments, users, UserRole } from "~/db/schema";
 
 // ─── Lesson Comment Service ───
 // Handles fetching, creating, and deleting lesson comments.
@@ -57,4 +57,51 @@ export function getCommentsByLessonId(lessonId: number): CommentThread[] {
     comment,
     replies: replies.filter((r) => r.parentId === comment.id),
   }));
+}
+
+export function createComment(
+  userId: number,
+  lessonId: number,
+  content: string,
+  parentId?: number
+) {
+  if (parentId !== undefined) {
+    const parent = getCommentById(parentId);
+    if (!parent || parent.lessonId !== lessonId || parent.parentId !== null) {
+      throw new Error("Invalid parent comment");
+    }
+  }
+
+  return db
+    .insert(lessonComments)
+    .values({
+      userId,
+      lessonId,
+      content: content.trim(),
+      parentId: parentId ?? null,
+    })
+    .returning()
+    .get();
+}
+
+export function deleteComment(
+  commentId: number,
+  requestingUserId: number,
+  requestingUserRole: UserRole,
+  courseInstructorId: number
+): void {
+  const comment = getCommentById(commentId);
+  if (!comment) {
+    throw new Error("Comment not found");
+  }
+
+  const isOwner = comment.userId === requestingUserId;
+  const isInstructor = requestingUserId === courseInstructorId;
+  const isAdmin = requestingUserRole === UserRole.Admin;
+
+  if (!isOwner && !isInstructor && !isAdmin) {
+    throw new Error("Not authorized to delete this comment");
+  }
+
+  db.delete(lessonComments).where(eq(lessonComments.id, commentId)).run();
 }
