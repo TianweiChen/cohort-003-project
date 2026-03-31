@@ -13,6 +13,7 @@ vi.mock("~/db", () => ({
   },
 }));
 
+// Import after mock so the module picks up our test db
 import {
   getCommentById,
   getCommentsByLessonId,

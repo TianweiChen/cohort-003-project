@@ -21,6 +21,10 @@ export type CommentThread = {
   replies: CommentWithAuthor[];
 };
 
+/**
+ * Returns the raw DB row for a comment, without author info.
+ * Used internally for validation in write operations (createComment, deleteComment).
+ */
 export function getCommentById(commentId: number) {
   return db
     .select()
