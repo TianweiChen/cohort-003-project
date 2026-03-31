@@ -33,6 +33,7 @@ import {
   deleteComment,
   type CommentThread,
 } from "~/services/lessonCommentService";
+import { CommentSection } from "~/components/comment-section";
 import { getUserById } from "~/services/userService";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
