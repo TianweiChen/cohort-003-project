@@ -72,18 +72,28 @@ export function createComment(
     }
   }
 
+  const trimmed = content.trim();
+  if (!trimmed) {
+    throw new Error("Comment content cannot be empty");
+  }
+
   return db
     .insert(lessonComments)
     .values({
       userId,
       lessonId,
-      content: content.trim(),
+      content: trimmed,
       parentId: parentId ?? null,
     })
     .returning()
     .get();
 }
 
+/**
+ * Deletes a comment if the requester is authorized (owner, course instructor, or admin).
+ * IMPORTANT: `requestingUserRole` must be sourced from the authenticated session,
+ * not from user-supplied input.
+ */
 export function deleteComment(
   commentId: number,
   requestingUserId: number,

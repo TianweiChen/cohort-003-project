@@ -205,6 +205,12 @@ describe("lessonCommentService — write", () => {
       ).toThrow("Invalid parent comment");
     });
 
+    it("throws when content is empty after trimming", () => {
+      expect(() =>
+        createComment(base.user.id, lesson.id, "   ")
+      ).toThrow("Comment content cannot be empty");
+    });
+
     it("throws when parentId belongs to a different lesson", () => {
       const otherLesson = testDb
         .insert(schema.lessons)
