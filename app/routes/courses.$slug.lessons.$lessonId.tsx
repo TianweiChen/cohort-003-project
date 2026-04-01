@@ -26,7 +26,15 @@ import {
   getBestAttempt,
 } from "~/services/quizService";
 import { computeResult } from "~/services/quizScoringService";
-import { LessonProgressStatus } from "~/db/schema";
+import { LessonProgressStatus, UserRole } from "~/db/schema";
+import {
+  getCommentsByLessonId,
+  createComment,
+  deleteComment,
+  type CommentThread,
+} from "~/services/lessonCommentService";
+import { CommentSection } from "~/components/comment-section";
+import { getUserById } from "~/services/userService";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import {
@@ -63,6 +71,17 @@ const lessonParamsSchema = z.object({
 
 const markCompleteSchema = z.object({
   intent: z.literal("mark-complete"),
+});
+
+const postCommentSchema = z.object({
+  intent: z.literal("post-comment"),
+  content: z.string().min(1).max(2000),
+  parentId: z.coerce.number().int().positive().optional(),
+});
+
+const deleteCommentSchema = z.object({
+  intent: z.literal("delete-comment"),
+  commentId: z.coerce.number().int().positive(),
 });
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
@@ -133,6 +152,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const currentUserId = await getCurrentUserId(request);
+  const currentUser = currentUserId ? getUserById(currentUserId) : null;
+  const currentUserRole = currentUser?.role ?? null;
   let enrolled = false;
   let lessonStatus: string | null = null;
   let lastWatchPosition = 0;
@@ -190,6 +211,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppBlockedCountry = pppResult.blockedCountry;
     pppPurchaseCountry = pppResult.purchaseCountry;
   }
+
+  const comments = getCommentsByLessonId(lessonId);
 
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
@@ -281,6 +304,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    comments,
+    courseInstructorId: course.instructorId,
+    currentUserRole,
   };
 }
 
@@ -329,6 +355,58 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
 
     return { quizResult: result };
+  }
+
+  if (intent === "post-comment") {
+    const result = parseFormData(formData, postCommentSchema);
+    if (!result.success) {
+      return data({ errors: result.errors }, { status: 400 });
+    }
+    const { content, parentId } = result.data;
+
+    const enrolled = isUserEnrolled(currentUserId, course.id);
+    if (!enrolled) {
+      throw data("You must be enrolled to comment", { status: 403 });
+    }
+
+    try {
+      createComment(currentUserId, lessonId, content, parentId);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Invalid parent comment")) {
+        throw data("Invalid parent comment", { status: 400 });
+      }
+      if (e instanceof Error && e.message.includes("cannot be empty")) {
+        throw data("Comment content cannot be empty", { status: 400 });
+      }
+      throw e;
+    }
+    return { commentPosted: true };
+  }
+
+  if (intent === "delete-comment") {
+    const result = parseFormData(formData, deleteCommentSchema);
+    if (!result.success) {
+      return data({ errors: result.errors }, { status: 400 });
+    }
+    const { commentId } = result.data;
+
+    const currentUser = getUserById(currentUserId);
+    if (!currentUser) {
+      throw data("User not found", { status: 404 });
+    }
+
+    try {
+      deleteComment(commentId, currentUserId, currentUser.role, course.instructorId);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Not authorized")) {
+        throw data("Not authorized", { status: 403 });
+      }
+      if (e instanceof Error && e.message.includes("not found")) {
+        throw data("Comment not found", { status: 404 });
+      }
+      throw e;
+    }
+    return { commentDeleted: true };
   }
 
   throw data("Invalid action", { status: 400 });
@@ -382,6 +460,9 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    comments,
+    courseInstructorId,
+    currentUserRole,
   } = loaderData;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
@@ -545,6 +626,15 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
               isSubmitting={isSubmittingQuiz}
             />
           )}
+
+          {/* Comments */}
+          <CommentSection
+            comments={comments}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+            courseInstructorId={courseInstructorId}
+            enrolled={enrolled}
+          />
 
           {/* Mark Complete / Up Next */}
           {enrolled && currentUserId && (
