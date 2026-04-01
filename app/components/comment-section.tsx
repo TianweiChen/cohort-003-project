@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFetcher } from "react-router";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -6,6 +6,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { Card, CardContent } from "~/components/ui/card";
 import { UserRole } from "~/db/schema";
 import type { CommentThread, CommentWithAuthor } from "~/services/lessonCommentService";
+import { UserAvatar } from "~/components/user-avatar";
 
 // ─── CommentSection ───
 // Displays threaded comments for a lesson.
@@ -28,16 +29,9 @@ function formatRelativeTime(isoString: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function Avatar({ name }: { name: string }) {
-  const initial = name.charAt(0).toUpperCase();
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-      {initial}
-    </div>
-  );
+  if (days < 365) return `${days}d ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
 }
 
 function DeleteButton({
@@ -82,6 +76,7 @@ function DeleteButton({
     <Button
       variant="ghost"
       size="sm"
+      aria-label="Delete comment"
       className="h-6 px-2 text-muted-foreground hover:text-destructive"
       onClick={() => setConfirming(true)}
     >
@@ -108,10 +103,11 @@ function CommentForm({
 
   const isSubmitting = fetcher.state !== "idle";
 
-  // Clear form on successful post
-  if (fetcher.state === "idle" && fetcher.data?.commentPosted && content !== "") {
-    setContent("");
-  }
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.commentPosted) {
+      setContent("");
+    }
+  }, [fetcher.state, fetcher.data]);
 
   return (
     <fetcher.Form method="post">
@@ -171,7 +167,7 @@ function CommentItem({
     <div className="space-y-3">
       {/* Top-level comment */}
       <div className="flex gap-3">
-        <Avatar name={comment.authorName} />
+        <UserAvatar name={comment.authorName} avatarUrl={null} />
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{comment.authorName}</span>
@@ -186,6 +182,7 @@ function CommentItem({
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground"
+                aria-expanded={showReplyForm}
                 onClick={() => setShowReplyForm((v) => !v)}
               >
                 Reply
@@ -212,7 +209,7 @@ function CommentItem({
         <div className="ml-11 space-y-3 border-l-2 border-border pl-4">
           {replies.map((reply) => (
             <div key={reply.id} className="flex gap-3">
-              <Avatar name={reply.authorName} />
+              <UserAvatar name={reply.authorName} avatarUrl={null} />
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{reply.authorName}</span>
