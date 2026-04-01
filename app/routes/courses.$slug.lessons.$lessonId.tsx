@@ -33,12 +33,19 @@ import {
   deleteComment,
   type CommentThread,
 } from "~/services/lessonCommentService";
+import {
+  toggleBookmark,
+  isBookmarked,
+  getBookmarkedLessonIdsForCourse,
+} from "~/services/bookmarkService";
 import { CommentSection } from "~/components/comment-section";
 import { getUserById } from "~/services/userService";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import {
   AlertTriangle,
+  Bookmark,
+  BookmarkCheck,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -82,6 +89,10 @@ const postCommentSchema = z.object({
 const deleteCommentSchema = z.object({
   intent: z.literal("delete-comment"),
   commentId: z.coerce.number().int().positive(),
+});
+
+const toggleBookmarkSchema = z.object({
+  intent: z.literal("toggle-bookmark"),
 });
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
@@ -214,6 +225,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const comments = getCommentsByLessonId(lessonId);
 
+  let bookmarked = false;
+  let bookmarkedLessonIds: number[] = [];
+  if (currentUserId && enrolled) {
+    bookmarked = isBookmarked({ userId: currentUserId, lessonId });
+    bookmarkedLessonIds = getBookmarkedLessonIdsForCourse({
+      userId: currentUserId,
+      courseId: course.id,
+    });
+  }
+
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
     ? await renderMarkdown(lesson.content)
@@ -307,6 +328,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     comments,
     courseInstructorId: course.instructorId,
     currentUserRole,
+    bookmarked,
+    bookmarkedLessonIds,
   };
 }
 
@@ -409,6 +432,15 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { commentDeleted: true };
   }
 
+  if (intent === "toggle-bookmark") {
+    const enrolled = isUserEnrolled(currentUserId, course.id);
+    if (!enrolled) {
+      throw data("You must be enrolled to bookmark lessons", { status: 403 });
+    }
+    toggleBookmark({ userId: currentUserId, lessonId });
+    return { bookmarkToggled: true };
+  }
+
   throw data("Invalid action", { status: 400 });
 }
 
@@ -463,9 +495,19 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     comments,
     courseInstructorId,
     currentUserRole,
+    bookmarked,
+    bookmarkedLessonIds,
   } = loaderData;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
+  const bookmarkFetcher = useFetcher({ key: `bookmark-${lesson.id}` });
+  const isTogglingBookmark = bookmarkFetcher.state !== "idle";
+  const isOptimisticallyBookmarked =
+    bookmarkFetcher.state !== "idle"
+      ? bookmarkFetcher.formData?.get("intent") === "toggle-bookmark"
+        ? !bookmarked
+        : bookmarked
+      : bookmarked;
   const quizFetcher = useFetcher({ key: `quiz-${lesson.id}` });
   const navigate = useNavigate();
 
@@ -535,6 +577,7 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
         currentLessonId={lesson.id}
         lessonProgressMap={lessonProgressMap}
         enrolled={enrolled}
+        bookmarkedLessonIds={bookmarkedLessonIds}
       />
 
       <div className="flex-1 p-6 lg:p-8">
@@ -582,6 +625,28 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
                   Open Code
                 </Button>
               </a>
+            )}
+            {enrolled && currentUserId && (
+              <bookmarkFetcher.Form method="post" className="ml-auto">
+                <input type="hidden" name="intent" value="toggle-bookmark" />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="sm"
+                  disabled={isTogglingBookmark}
+                  title={
+                    isOptimisticallyBookmarked
+                      ? "Remove bookmark"
+                      : "Bookmark this lesson"
+                  }
+                >
+                  {isOptimisticallyBookmarked ? (
+                    <BookmarkCheck className="size-4 text-amber-500" />
+                  ) : (
+                    <Bookmark className="size-4" />
+                  )}
+                </Button>
+              </bookmarkFetcher.Form>
             )}
           </div>
 
@@ -741,6 +806,7 @@ function CurriculumSidebar({
   currentLessonId,
   lessonProgressMap,
   enrolled,
+  bookmarkedLessonIds,
 }: {
   course: { id: number; title: string; slug: string };
   curriculum: Array<{
@@ -751,11 +817,14 @@ function CurriculumSidebar({
   currentLessonId: number;
   lessonProgressMap: Record<number, string>;
   enrolled: boolean;
+  bookmarkedLessonIds: number[];
 }) {
   // Find which module the current lesson belongs to
   const currentModuleId = curriculum.find((m) =>
     m.lessons.some((l) => l.id === currentLessonId)
   )?.id;
+
+  const bookmarkedSet = new Set(bookmarkedLessonIds);
 
   const [expandedModules, setExpandedModules] = useState<Set<number>>(() => {
     // Start with current module expanded
@@ -797,6 +866,7 @@ function CurriculumSidebar({
                 <button
                   onClick={() => toggleModule(mod.id)}
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-muted"
+                  aria-label={`${mod.title}${mod.lessons.some((l) => bookmarkedSet.has(l.id)) ? " (has bookmarks)" : ""}`}
                 >
                   <ChevronDown
                     className={cn(
@@ -805,6 +875,9 @@ function CurriculumSidebar({
                     )}
                   />
                   <span className="flex-1 text-left">{mod.title}</span>
+                  {mod.lessons.some((l) => bookmarkedSet.has(l.id)) && (
+                    <Bookmark className="size-3 shrink-0 fill-amber-500 text-amber-500" />
+                  )}
                 </button>
 
                 {isExpanded && (
@@ -840,6 +913,9 @@ function CurriculumSidebar({
                               <Circle className="size-3.5 shrink-0" />
                             )}
                             <span className="truncate">{l.title}</span>
+                            {bookmarkedSet.has(l.id) && (
+                              <Bookmark className="ml-auto size-3 shrink-0 fill-amber-500 text-amber-500" />
+                            )}
                           </Link>
                         </li>
                       );

@@ -274,6 +274,25 @@ export const videoWatchEvents = sqliteTable("video_watch_events", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+export const lessonBookmarks = sqliteTable(
+  "lesson_bookmarks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lessonId: integer("lesson_id")
+      .notNull()
+      .references(() => lessons.id, { onDelete: "cascade" }),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => ({
+    userLessonUnique: unique().on(table.userId, table.lessonId),
+  })
+);
+
 export const lessonComments = sqliteTable("lesson_comments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   lessonId: integer("lesson_id")

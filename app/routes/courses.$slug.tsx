@@ -35,6 +35,7 @@ import {
 } from "~/components/ui/tabs";
 import {
   AlertTriangle,
+  Bookmark,
   BookOpen,
   CheckCircle2,
   Circle,
@@ -50,6 +51,7 @@ import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo } from "~/lib/ppp";
+import { getBookmarkedLessonIdsForCourse } from "~/services/bookmarkService";
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Course";
@@ -79,6 +81,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
+  let bookmarkedLessonIds: number[] = [];
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
@@ -96,6 +99,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
       const nextLesson = getNextIncompleteLesson(currentUserId, course.id);
       nextLessonId = nextLesson?.id ?? null;
+
+      bookmarkedLessonIds = getBookmarkedLessonIdsForCourse({
+        userId: currentUserId,
+        courseId: course.id,
+      });
     }
   }
 
@@ -131,6 +139,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     ratingAverage: ratingStats.average,
     ratingCount: ratingStats.count,
     userRating,
+    bookmarkedLessonIds,
   };
 }
 
@@ -234,6 +243,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     ratingAverage,
     ratingCount,
     userRating,
+    bookmarkedLessonIds,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -410,6 +420,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
               enrolled={enrolled}
               isInstructor={isInstructor}
               lessonProgressMap={lessonProgressMap}
+              bookmarkedLessonIds={bookmarkedLessonIds}
             />
           </div>
         </div>
@@ -517,6 +528,7 @@ function CourseContent({
   enrolled,
   isInstructor,
   lessonProgressMap,
+  bookmarkedLessonIds,
 }: {
   course: {
     id: number;
@@ -534,7 +546,10 @@ function CourseContent({
   enrolled: boolean;
   isInstructor: boolean;
   lessonProgressMap: Record<number, string>;
+  bookmarkedLessonIds: number[];
 }) {
+  const bookmarkedSet = new Set(bookmarkedLessonIds);
+
   return (
     <div>
       <h2 className="mb-4 text-2xl font-bold">Course Content</h2>
@@ -608,6 +623,9 @@ function CourseContent({
                               <Circle className="size-4 shrink-0 text-muted-foreground" />
                             )}
                             <span className="flex-1">{lesson.title}</span>
+                            {bookmarkedSet.has(lesson.id) && (
+                              <Bookmark className="size-3.5 shrink-0 fill-amber-500 text-amber-500" />
+                            )}
                             {lesson.durationMinutes && (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="size-3" />
